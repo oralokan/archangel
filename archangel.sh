@@ -23,7 +23,6 @@ function contains {
   done
 }
 
-
 echo "archangel -- installer script for Arch Linux"
 echo
 echo "NOTE: Edit /etc/pacman.d/mirrorlist before running this script"
@@ -78,24 +77,6 @@ do
   if [ "$DISK_PASSWD" != "$DISK_PASSWD_VFY" ]
   then
     DISK_PASSWD="" 
-    echo "ERROR: passwords do not match!"
-    echo
-  fi
-done
-
-# Get root password
-ROOT_PASSWD=""
-while [ -z "$ROOT_PASSWD" ]
-do
-  echo -n "Enter root password:  "
-  read -s ROOT_PASSWD
-  echo
-  echo -n "Again...:  " 
-  read -s ROOT_PASSWD_VFY
-  echo
-  if [ "$ROOT_PASSWD" != "$ROOT_PASSWD_VFY" ]
-  then
-    ROOT_PASSWD="" 
     echo "ERROR: passwords do not match!"
     echo
   fi
@@ -165,7 +146,7 @@ then
     mkfs.fat -F32 $BOOT_PART    # ESP required to be FAT32
 else
     set -x
-    mkfs.ext4 $BOOT_PART
+    mkfs.ext4 -F $BOOT_PART
 fi
 
 # Set up the cryptroot
@@ -175,14 +156,19 @@ echo "$DISK_PASSWD" | cryptsetup --force-password luksFormat $ROOT_PART
 echo "$DISK_PASSWD" | cryptsetup open $ROOT_PART cryptroot
 
 set -x
-mkfs -t ext4 /dev/mapper/cryptroot
+mkfs -t ext4 -F /dev/mapper/cryptroot
 mount -t ext4 /dev/mapper/cryptroot /mnt
+mkdir /mnt/boot
+mount $BOOT_PART /mnt/boot
 
 # Install base system
 pacstrap -i /mnt base base-devel
 genfstab -p /mnt >> /mnt/etc/fstab
-arch-chroot /mnt
 
+set +x
+ROOT_PART_UUID=$(blkid | grep $ROOT_PART | awk -F' ' '{print $2}' | cut -d'"' -f2)  # What a mess!!!
+
+cat > /mnt/archangel.sh <<- EOM
 # System configuration
 echo $HOSTNAME > /etc/hostname
 ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime   # TODO: Get user input
@@ -190,7 +176,7 @@ echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
 
 set -v
-echo "$ROOT_PASSWD" | passwd --stdin
+passwd
 
 set -x
 # Allocate swapfile
@@ -205,27 +191,38 @@ mkinitcpio -p linux
 
 # Install and configure bootloader
 
-ROOT_PART_UUID=$(blkid | grep $ROOT_PART | awk -F' ' '{print $2}' | cut -d'"' -f2)  # What a mess!!!
-
 set +x
+EOM
+
 if [ -n "$UEFI_MODE" ]
 then
-    set -x
-    bootctl install
+cat >> /mnt/archangel.sh <<- EOM
+set -x
+bootctl install
 
-    echo "title   Arch Linux" > /boot/loader/entries/arch.conf
-    echo "linux   /vmlinuz-linux" >> /boot/loader/entries/arch.conf
-    echo "initrd  /initramfs-linux.img" >> /boot/loader/entries/arch.conf
-    echo "options cryptdevice=UUID=$ROOT_PART_UUID:cryptroot root=/dev/mapper/cryptroot quiet rw" >> /boot/loader/entries/arch.conf
+echo "title   Arch Linux" > /boot/loader/entries/arch.conf
+echo "linux   /vmlinuz-linux" >> /boot/loader/entries/arch.conf
+echo "initrd  /initramfs-linux.img" >> /boot/loader/entries/arch.conf
+echo "options cryptdevice=UUID=$ROOT_PART_UUID:cryptroot root=/dev/mapper/cryptroot quiet rw" >> /boot/loader/entries/arch.conf
 
-    echo "default arch" > /boot/loader/loader.conf
+echo "default arch" > /boot/loader/loader.conf
+EOM
 else
-    set -x
-    pacman -S grub
-    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"cryptdevice=/dev/disk/by-uuid/$ROOT_PART_UUID:cryptroot\"/g"
-    echo "GRUB_CMDLINE_LINUX=\"cryptdevice=/dev/disk/by-uuid/$ROOT_PART_UUID:cryptroot\"" >> /etc/default/grub
-    grub-install --recheck $DEVICE
-    grub-mkconfig -o /boot/grub/grub.cfg
+cat >> /mnt/archangel.sh <<- EOM
+set -x
+pacman -S --noconfirm grub
+sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"cryptdevice=\/dev\/disk\/by-uuid\/$ROOT_PART_UUID:cryptroot\"/g" /etc/default/grub
+grub-install --recheck $DEVICE
+grub-mkconfig -o /boot/grub/grub.cfg
+EOM
 fi
 
 # TODO: systemctl enable dhcpcd@eno1.service
+chmod u+x /mnt/archangel.sh
+
+echo "Will now chroot into the new system."
+echo "Run /archangel.sh" after this happens.
+echo "Press any key to continue."
+read -n1 nothing
+
+arch-chroot /mnt
