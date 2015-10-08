@@ -190,7 +190,7 @@ mkswap /swapfile
 swapon /swapfile
 echo "/swapfile none swap defaults 0 0" >> /etc/fstab
 # insert the encrypt hook before the filesystems hook in mkinitcpio.conf
-sed -i '^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
+sed -i '/^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
 mkinitcpio -p linux
 
 # Install and configure bootloader
