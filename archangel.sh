@@ -25,8 +25,6 @@ function contains {
 
 echo "archangel -- installer script for Arch Linux"
 echo
-echo "NOTE: Edit /etc/pacman.d/mirrorlist before running this script"
-echo
 echo "NOTE: Currently, the time zone is set to Europe/Istanbul"
 echo "NOTE: Currently, the locale is always en_US.UTF-8"
 echo
@@ -46,7 +44,9 @@ echo
 CONTAINED_ITEM=""
 while [ -z "$CONTAINED_ITEM" ]
 do
-  echo -n "Enter your selection (e.g. /dev/sda OR /dev/sdb):  "
+  echo "Pick the installation device."
+  echo "This should be of the form /dev/sdX"
+  echo -n "Enter your selection:  "
   read SELECTED_DEVICE 
   contains "$SELECTED_DEVICE" "$DEVICE_LIST"
   echo "result: $CONTAINED_ITEM"
@@ -116,9 +116,13 @@ then
     exit
 fi
 
-
 ################################3
 
+# Configure mirrorlist
+#MIRROR_LINE=$(grep -n bootctl archangel.sh | awk -F':' '{ print $1 }')
+COUNTRY="Turkey"
+MIRROR_URL=$(grep -A1 $COUNTRY /etc/pacman.d/mirrorlist | tail -n1)
+sed -i "1i $MIRROR_URL" /etc/pacman.d/mirrorlist
 
 # Partitioning the block device
 if [ -n "$UEFI_MODE" ]
@@ -186,7 +190,7 @@ mkswap /swapfile
 swapon /swapfile
 echo "/swapfile none swap defaults 0 0" >> /etc/fstab
 # insert the encrypt hook before the filesystems hook in mkinitcpio.conf
-sed '^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
+sed -i '^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
 mkinitcpio -p linux
 
 # Install and configure bootloader
