@@ -81,6 +81,7 @@ done
 DEVICE="$CONTAINED_ITEM"
 BOOT_PART=$DEVICE"1"
 ROOT_PART=$DEVICE"2"
+ROOT_PART_UUID=$(lsblk -fnlp | grep $ROOT_PART | awk '{print $3}')
 }
 
 function get_hostname {
@@ -194,7 +195,7 @@ Selected configuration:
 Target Disk:    $DEVICE
 Boot Mode:      $BOOT_MODE
 Boot Partition: $BOOT_PART  $BOOT_PART_SIZE MB  $BOOT_PART_TYP  $BOOT_PART_FMT 
-Root Partition: $ROOT_PART  LUKS (encrypted)
+Root Partition: $ROOT_PART  LUKS (encrypted)  UUID=$ROOT_PART_UUID
 LUKS Partition: /dev/mapper/cryptroot  primary  ext4
 Hostname:       $HOSTNAME
 Mirror URL:     $(echo $MIRROR_URL | awk -F" " '{ print $3 }')
@@ -268,13 +269,14 @@ function mount_disks {
   echo "Disks mounted"
 }
 
+function base_install {
+  # TODO: Modify pacstrap to avoid confirmations
+  pacstrap -i /mnt base base-devel
+}
 
 # Install base system
-pacstrap -i /mnt base base-devel
 genfstab -p /mnt >> /mnt/etc/fstab
 
-set +x
-ROOT_PART_UUID=$(blkid | grep $ROOT_PART | awk -F' ' '{print $2}' | cut -d'"' -f2)  # What a mess!!!
 
 cat > /mnt/archangel.sh <<- EOM
 # System configuration
