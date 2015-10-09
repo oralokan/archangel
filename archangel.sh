@@ -19,7 +19,7 @@ archangel -- installer script for Arch Linux
 Installs a fresh install of Arch Linux onto an entire hard drive.
 The disk is separated into two partitions:
 
-  1: The boot partition (512 MB)
+  1: Boot partition
   2: Encrypted root partition (Rest of the available space)
 
 NOTE:
@@ -227,52 +227,47 @@ exit
 
 ################################3
 
-# Configure mirrorlist
-#MIRROR_LINE=$(grep -n bootctl archangel.sh | awk -F':' '{ print $1 }')
-COUNTRY="Turkey"
-MIRROR_URL=$(grep -A1 $COUNTRY /etc/pacman.d/mirrorlist | tail -n1)
-sed -i "1i $MIRROR_URL" /etc/pacman.d/mirrorlist
+function configure_mirrorlist {
+  sed -i "1i $MIRROR_URL" /etc/pacman.d/mirrorlist
+  echo "Mirrorlist configuration complete"
+}
 
-# Partitioning the block device
-if [ -n "$UEFI_MODE" ]
-then
-    BOOT_PART_LBL=gpt
-    BOOT_PART_TYP=ESP
-    BOOT_PART_FMT=fat32
-else
-    BOOT_PART_LBL=msdos
-    BOOT_PART_TYP=primary
-    BOOT_PART_FMT=ext4
-fi
+function setup_cryptroot {
+  echo "$DISK_PASSWD" | cryptsetup --force-password luksFormat $ROOT_PART
+  echo "$DISK_PASSWD" | cryptsetup open $ROOT_PART cryptroot
+  echo "Encrypted partition created"
+  mkfs -t ext4 -F /dev/mapper/cryptroot
+  echo "Encrypted partition formatted"
+}
 
-set -x # echo on
+function partition_disk {
+  local ROFF=$(( $BOOT_PART_SIZE+1 ))
+  parted -s $DEVICE mklabel $BOOT_PART_LBL
+  parted -s $DEVICE mkpart $BOOT_PART_TYP $BOOT_PART_FMT 1MiB 513MiB
+  parted -s $DEVICE set 1 boot on
+  parted -s $DEVICE mkpart primary ext4 "$ROFF"MiB 100%
+  echo "Disk partitions created"
 
-parted -s $DEVICE mklabel $BOOT_PART_LBL
-parted -s $DEVICE mkpart $BOOT_PART_TYP $BOOT_PART_FMT 1MiB 513MiB
-parted -s $DEVICE set 1 boot on
-parted -s $DEVICE mkpart primary ext4 513MiB 100%
-
-set +x
-if [ -n "$UEFI_MODE" ]
-then
-    set -x
+  if [ "$BOOT_MODE" == "UEFI" ]
+  then
     mkfs.fat -F32 $BOOT_PART    # ESP required to be FAT32
-else
-    set -x
+  else
     mkfs.ext4 -F $BOOT_PART
-fi
+  fi
+  echo "Boot partition formatted"
 
-# Set up the cryptroot
+  setup_cryptroot
 
-set -v
-echo "$DISK_PASSWD" | cryptsetup --force-password luksFormat $ROOT_PART
-echo "$DISK_PASSWD" | cryptsetup open $ROOT_PART cryptroot
+  echo "Disk partitioning complete"
+}
 
-set -x
-mkfs -t ext4 -F /dev/mapper/cryptroot
-mount -t ext4 /dev/mapper/cryptroot /mnt
-mkdir /mnt/boot
-mount $BOOT_PART /mnt/boot
+function mount_disks {
+  mount -t ext4 /dev/mapper/cryptroot /mnt
+  mkdir /mnt/boot
+  mount $BOOT_PART /mnt/boot
+  echo "Disks mounted"
+}
+
 
 # Install base system
 pacstrap -i /mnt base base-devel
