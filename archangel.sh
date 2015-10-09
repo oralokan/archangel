@@ -272,10 +272,8 @@ function mount_disks {
 function base_install {
   # TODO: Modify pacstrap to avoid confirmations
   pacstrap -i /mnt base base-devel
+  genfstab -p /mnt >> /mnt/etc/fstab
 }
-
-# Install base system
-genfstab -p /mnt >> /mnt/etc/fstab
 
 
 cat > /mnt/archangel.sh <<- EOM
