@@ -81,7 +81,6 @@ done
 DEVICE="$CONTAINED_ITEM"
 BOOT_PART=$DEVICE"1"
 ROOT_PART=$DEVICE"2"
-ROOT_PART_UUID=$(lsblk -fnlp | grep $ROOT_PART | awk '{print $3}')
 }
 
 function get_hostname {
@@ -170,7 +169,7 @@ Selected configuration:
 Target Disk:    $DEVICE
 Boot Mode:      $BOOT_MODE
 Boot Partition: $BOOT_PART  $BOOT_PART_SIZE MB  $BOOT_PART_TYP  $BOOT_PART_FMT 
-Root Partition: $ROOT_PART  LUKS (encrypted)  UUID=$ROOT_PART_UUID
+Root Partition: $ROOT_PART  LUKS (encrypted) 
 LUKS Partition: /dev/mapper/cryptroot  primary  ext4
 Hostname:       $HOSTNAME
 Mirror URL:     $(echo $MIRROR_URL | awk -F" " '{ print $3 }')
@@ -199,7 +198,6 @@ get_confirmation
 
 echo "GO"
 
-exit    ## TODO: Remove this line.. This is here as a failsafe in development
 
 ################################3
 
@@ -219,7 +217,7 @@ function setup_cryptroot {
 function partition_disk {
   local ROFF=$(( $BOOT_PART_SIZE+1 ))
   parted -s $DEVICE mklabel $BOOT_PART_LBL
-  parted -s $DEVICE mkpart $BOOT_PART_TYP $BOOT_PART_FMT 1MiB 513MiB
+  parted -s $DEVICE mkpart $BOOT_PART_TYP $BOOT_PART_FMT 1MiB "$BOOT_PART_SIZE"MiB
   parted -s $DEVICE set 1 boot on
   parted -s $DEVICE mkpart primary ext4 "$ROFF"MiB 100%
   echo "Disk partitions created"
@@ -242,6 +240,8 @@ function mount_partitions {
   mkdir /mnt/boot
   mount $BOOT_PART /mnt/boot
   echo "Disks mounted"
+
+  ROOT_PART_UUID=$(lsblk -fnlp | grep $ROOT_PART | awk '{print $3}')
 }
 
 function base_install {
@@ -265,6 +265,7 @@ ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 
 echo "$LOCALE $(echo "$LOCALE" | awk -F'.' '{print $2}')" >> /etc/locale.gen
 echo "LANG=$LOCALE" > /etc/locale.conf
+locale-gen
 
 passwd
 
