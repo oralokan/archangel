@@ -121,30 +121,6 @@ function get_disk_pass {
   done
 }
 
-function get_root_pass {
-  ROOT_PASSWD=""
-  while [ -z "$ROOT_PASSWD" ]
-  do
-    echo -n "Enter root password:  "
-    read -s ROOT_PASSWD
-    echo
-    if [ -z "$ROOT_PASSWD" ]
-    then
-      echo "Root password cannot be empty" 
-      continue
-    fi
-    echo -n "Again...:  " 
-    read -s ROOT_PASSWD_VFY
-    echo
-    if [ "$ROOT_PASSWD" != "$ROOT_PASSWD_VFY" ]
-    then
-      ROOT_PASSWD="" 
-      echo "ERROR: passwords do not match!"
-      echo
-    fi
-  done
-}
-
 function get_boot_mode {
   if [ -e "/sys/firmware/efi" ]
   then 
@@ -183,7 +159,6 @@ function get_configuration {
   get_hostname
   get_country
   get_disk_pass
-  get_root_pass
   get_boot_mode
 }
 
