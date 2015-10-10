@@ -199,7 +199,7 @@ get_confirmation
 
 echo "GO"
 
-exit
+exit    ## TODO: Remove this line.. This is here as a failsafe in development
 
 ################################3
 
@@ -237,7 +237,7 @@ function partition_disk {
   echo "Disk partitioning complete"
 }
 
-function mount_disks {
+function mount_partitions {
   mount -t ext4 /dev/mapper/cryptroot /mnt
   mkdir /mnt/boot
   mount $BOOT_PART /mnt/boot
@@ -251,17 +251,23 @@ function base_install {
 }
 
 
+configure_mirrorlist
+partition_disk
+mount_partitions
+base_install
+
+# Create the continuation script that will be run after arch-chroot
+
 cat > /mnt/archangel.sh <<- EOM
 # System configuration
-echo $HOSTNAME > /etc/hostname
-ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime   # TODO: Get user input
-echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
-echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "$HOSTNAME" > /etc/hostname
+ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 
-set -v
+echo "$LOCALE $(echo "$LOCALE" | awk -F'.' '{print $2}')" >> /etc/locale.gen
+echo "LANG=$LOCALE" > /etc/locale.conf
+
 passwd
 
-set -x
 # Allocate swapfile
 fallocate -l 4G /swapfile
 chmod 600 /swapfile
@@ -273,14 +279,11 @@ sed -i '/^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
 mkinitcpio -p linux
 
 # Install and configure bootloader
-
-set +x
 EOM
 
 if [ -n "$UEFI_MODE" ]
 then
 cat >> /mnt/archangel.sh <<- EOM
-set -x
 bootctl install
 
 echo "title   Arch Linux" > /boot/loader/entries/arch.conf
@@ -292,7 +295,6 @@ echo "default arch" > /boot/loader/loader.conf
 EOM
 else
 cat >> /mnt/archangel.sh <<- EOM
-set -x
 pacman -S --noconfirm grub
 sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"cryptdevice=\/dev\/disk\/by-uuid\/$ROOT_PART_UUID:cryptroot\"/g" /etc/default/grub
 grub-install --recheck $DEVICE
