@@ -30,17 +30,27 @@ In the current version, the following defaults are set automatically:
 
 EOM
 
+# contains ITEM LIST RESULT
+# determines whether or not the given LIST (array of values: a string where
+# whitespace and newline characters are delimiters) contains a given ITEM
+# (a string without any of the delimiters mentioned above). If ITEM is in
+# LIST, then the result parameter gets set to "true". Otherwise, it is "false"
+# RESULT is the name of the parameter in which to store the result
 function contains {
   local ITEM=$1
   local LIST=$2
+  local __RESULT=$3
+  local RESULT="false"
   for I in $LIST
   do
     if [ "$I" == "$ITEM" ]
     then
-      CONTAINED_ITEM="$ITEM" 
+      RESULT="true"
       break
     fi
   done
+
+  eval $__RESULT="'$RESULT'"
 }
 
 function list_hdd {
@@ -66,19 +76,18 @@ EOM
 list_hdd  # List the available devices
 
 local DEVICE_LIST=$(lsblk -pnr | awk -F' ' '{ print $1 }')
-local CONTAINED_ITEM=""
-while [ -z "$CONTAINED_ITEM" ]
-do
+local DEVICE_FOUND=""
+while [ "$DEVICE_FOUND" != "true" ]; do
   echo -n "Enter your selection:  "
-  read SELECTED_DEVICE 
-  contains "$SELECTED_DEVICE" "$DEVICE_LIST"
-  if [ -z "$CONTAINED_ITEM" ]
-  then
+  read SELECTED_DEVICE
+  contains "$SELECTED_DEVICE" "$DEVICE_LIST" "DEVICE_FOUND"
+  if [ "$DEVICE_FOUND" != "true" ]; then
     echo "ERROR: invalid selection!"
     echo
   fi
 done
-DEVICE="$CONTAINED_ITEM"
+
+DEVICE="$SELECTED_DEVICE"
 BOOT_PART=$DEVICE"1"
 ROOT_PART=$DEVICE"2"
 }
@@ -198,6 +207,7 @@ get_confirmation
 
 echo "GO"
 
+#exit
 
 ################################3
 
