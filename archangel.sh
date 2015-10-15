@@ -11,6 +11,7 @@
 COUNTRY="Turkey"
 TIMEZONE="Europe/Istanbul"
 LOCALE="en_US.UTF-8"
+ENCRYPT_ROOT="true"
 
 cat << EOM
 
@@ -106,26 +107,33 @@ function get_hostname {
 }
 
 function get_disk_pass {
-  DISK_PASSWD=""
-  while [ -z "$DISK_PASSWD" ]
-  do
-    echo -n "Enter disk encryption password:  "
+cat << EOM
+
+archangel supports installing Arch Linux with full-disk encryption.
+Enter a disk encryption password, or leave blank to disable disk encryption
+EOM
+  while [ "true" ]; do
+    echo -n "Enter password: "
     read -s DISK_PASSWD
     echo
-    if [ -z "$DISK_PASSWD" ]
-    then
-      echo "Disk password cannot be empty" 
-      continue
+    if [ -n "$DISK_PASSWD" ]; then
+        echo -n "Verify password: "
+        read_s -s DISK_PASSWD_VFY
+        echo
+        if [ "$DISK_PASSWD" != "$DISK_PASSWD_VFY" ]; then
+            echo "Passwords do not match!"
+            continue
+        fi
+    else
+        echo -n "WARNING: Disk encryption will be disabled. Type YES to confirm"
+        read_s -s DISK_PASSWD_VFY
+        echo
+        if [ "$DISK_PASSWD_VFY" != "YES" ]; then
+            ENCRYPT_ROOT="false"
+            continue
+        fi
     fi
-    echo -n "Again...:  " 
-    read -s DISK_PASSWD_VFY
-    echo
-    if [ "$DISK_PASSWD" != "$DISK_PASSWD_VFY" ]
-    then
-      DISK_PASSWD="" 
-      echo "ERROR: passwords do not match!"
-      echo
-    fi
+    break
   done
 }
 
@@ -207,7 +215,7 @@ get_confirmation
 
 echo "GO"
 
-#exit
+exit
 
 ################################3
 
@@ -240,13 +248,21 @@ function partition_disk {
   fi
   echo "Boot partition formatted"
 
-  setup_cryptroot
+  if [ "$ENCRYPT_ROOT" = "true" ]; then
+      setup_cryptroot
+  else
+      mkfs.ext4 -F $ROOT_PART
+  fi
 
   echo "Disk partitioning complete"
 }
 
 function mount_partitions {
-  mount -t ext4 /dev/mapper/cryptroot /mnt
+  if [ "$ENCRYPT_ROOT" = "true" ]; then
+      mount -t ext4 /dev/mapper/cryptroot /mnt
+  else
+      mount $ROOT_PART /mnt
+  fi
   mkdir /mnt/boot
   mount $BOOT_PART /mnt/boot
   echo "Disks mounted"
@@ -266,52 +282,52 @@ partition_disk
 mount_partitions
 base_install
 
+if [ "$ENCRYPT_ROOT" = "true" ]; then
+    ENC_HOOK_CMD="sed -i '/^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf" 
+    ENC_GRUB_CMD="sed -i \"s/GRUB_CMDLINE_LINUX=\"\"/GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"cryptdevice=\/dev\/disk\/by-uuid\/$ROOT_PART_UUID:cryptroot\"/g\" /etc/default/grub"
+    ENC_BTCT_CMD="options cryptdevice=UUID=$ROOT_PART_UUID:cryptroot root=/dev/mapper/cryptroot quiet rw"
+else
+    ENC_HOOK_CMD=""
+    ENC_GRUB_CMD=""
+    ENC_BTCT_CMD=""
+fi
+
+if [ "$BOOT_MODE" = "UEFI" ]; then
+BLOAD=" \
+bootctl install \
+cat > /boot/loader/entries/arch.conf <<- EOF \
+title   Arch Linux \
+linux   /vmlinuz-linux \
+initrd  /initramfs-linux.img \
+$ENC_BTCT_CMD \
+EOF \
+echo \"default arch\" > /boot/loader/loader.conf"
+else
+BLOAD=" \
+pacman -S --noconfirm grub
+$ENC_GRUB_CMD \
+grub-install --recheck $DEVICE \
+grub-mkconfig -o /boot/grub/grub.cfg"
+fi
+
 # Create the continuation script that will be run after arch-chroot
 
 cat > /mnt/archangel.sh <<- EOM
-# System configuration
 echo "$HOSTNAME" > /etc/hostname
 ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
-
 echo "$LOCALE $(echo "$LOCALE" | awk -F'.' '{print $2}')" >> /etc/locale.gen
 echo "LANG=$LOCALE" > /etc/locale.conf
 locale-gen
-
 passwd
-
-# Allocate swapfile
 fallocate -l 4G /swapfile
 chmod 600 /swapfile
 mkswap /swapfile
 swapon /swapfile
 echo "/swapfile none swap defaults 0 0" >> /etc/fstab
-# insert the encrypt hook before the filesystems hook in mkinitcpio.conf
-sed -i '/^HOOKS/s/filesystems/encrypt filesystems/g' /etc/mkinitcpio.conf
+$ENC_HOOK_CMD
 mkinitcpio -p linux
-
-# Install and configure bootloader
+install_bootloader
 EOM
-
-if [ -n "$UEFI_MODE" ]
-then
-cat >> /mnt/archangel.sh <<- EOM
-bootctl install
-
-echo "title   Arch Linux" > /boot/loader/entries/arch.conf
-echo "linux   /vmlinuz-linux" >> /boot/loader/entries/arch.conf
-echo "initrd  /initramfs-linux.img" >> /boot/loader/entries/arch.conf
-echo "options cryptdevice=UUID=$ROOT_PART_UUID:cryptroot root=/dev/mapper/cryptroot quiet rw" >> /boot/loader/entries/arch.conf
-
-echo "default arch" > /boot/loader/loader.conf
-EOM
-else
-cat >> /mnt/archangel.sh <<- EOM
-pacman -S --noconfirm grub
-sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"cryptdevice=\/dev\/disk\/by-uuid\/$ROOT_PART_UUID:cryptroot\"/g" /etc/default/grub
-grub-install --recheck $DEVICE
-grub-mkconfig -o /boot/grub/grub.cfg
-EOM
-fi
 
 # TODO: systemctl enable dhcpcd@eno1.service
 chmod u+x /mnt/archangel.sh
