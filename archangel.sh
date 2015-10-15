@@ -112,28 +112,28 @@ cat << EOM
 archangel supports installing Arch Linux with full-disk encryption.
 Enter a disk encryption password, or leave blank to disable disk encryption
 EOM
-  while [ "true" ]; do
+  while [ -n "true" ]; do
     echo -n "Enter password: "
     read -s DISK_PASSWD
     echo
     if [ -n "$DISK_PASSWD" ]; then
         echo -n "Verify password: "
-        read_s -s DISK_PASSWD_VFY
+        read -s DISK_PASSWD_VFY
         echo
         if [ "$DISK_PASSWD" != "$DISK_PASSWD_VFY" ]; then
             echo "Passwords do not match!"
-            continue
+        else
+            break
         fi
     else
-        echo -n "WARNING: Disk encryption will be disabled. Type YES to confirm"
-        read_s -s DISK_PASSWD_VFY
+        echo -n "WARNING: Disk encryption will be disabled. Type YES to confirm  "
+        read DISK_PASSWD_VFY
         echo
-        if [ "$DISK_PASSWD_VFY" != "YES" ]; then
+        if [ "$DISK_PASSWD_VFY" == "YES" ]; then
             ENCRYPT_ROOT="false"
-            continue
+            break
         fi
     fi
-    break
   done
 }
 
@@ -179,6 +179,12 @@ function get_configuration {
 }
 
 function get_confirmation {
+if [ "$ENCRYPT_ROOT" == "true" ]; then
+local ENCLINE="Root Partition: $ROOT_PART  LUKS (encrypted)"
+else
+local ENCLINE="Root Partition: $ROOT_PART  $BOOT_PART_TYP  $BOOT_PART_FMT"
+fi
+
 cat << EOM
 
 Selected configuration:
@@ -186,8 +192,7 @@ Selected configuration:
 Target Disk:    $DEVICE
 Boot Mode:      $BOOT_MODE
 Boot Partition: $BOOT_PART  $BOOT_PART_SIZE MB  $BOOT_PART_TYP  $BOOT_PART_FMT 
-Root Partition: $ROOT_PART  LUKS (encrypted) 
-LUKS Partition: /dev/mapper/cryptroot  primary  ext4
+$ENCLINE
 Hostname:       $HOSTNAME
 Mirror URL:     $(echo $MIRROR_URL | awk -F" " '{ print $3 }')
 Timezone:       $TIMEZONE
